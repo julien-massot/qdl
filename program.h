@@ -17,6 +17,7 @@ struct program {
 
 	bool is_nand;
 	bool is_erase;
+	bool is_sparse;
 
 	struct program *next;
 };

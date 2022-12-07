@@ -82,6 +82,7 @@ static int load_erase_tag(xmlNode *node, bool is_nand)
 static int load_program_tag(xmlNode *node, bool is_nand)
 {
 	struct program *program;
+	const char *sparse;
 	int errors = 0;
 
 	program = calloc(1, sizeof(struct program));
@@ -100,6 +101,11 @@ static int load_program_tag(xmlNode *node, bool is_nand)
 		program->last_sector = attr_as_unsigned(node, "last_sector", &errors);
 	} else {
 		program->file_offset = attr_as_unsigned(node, "file_sector_offset", &errors);
+	}
+
+	sparse = attr_as_string(node, "sparse", &errors);
+	if (!errors) {
+		program->is_sparse = strcmp(sparse, "true") == 0;
 	}
 
 	if (errors) {

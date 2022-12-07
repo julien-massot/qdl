@@ -51,6 +51,7 @@
 #include <libxml/tree.h>
 #include "qdl.h"
 #include "ufs.h"
+#include "sparse_reader.h"
 
 static void xml_setpropf(xmlNode *node, const char *attr, const char *fmt, ...)
 {
@@ -325,7 +326,9 @@ out:
 static int firehose_program(struct qdl_device *qdl, struct program *program, int fd)
 {
 	unsigned num_sectors;
+	struct sparse_reader s_reader;
 	struct stat sb;
+	size_t file_size;
 	size_t chunk_size;
 	xmlNode *root;
 	xmlNode *node;
@@ -339,12 +342,23 @@ static int firehose_program(struct qdl_device *qdl, struct program *program, int
 
 	num_sectors = program->num_sectors;
 
-	ret = fstat(fd, &sb);
-	if (ret < 0)
-		err(1, "failed to stat \"%s\"\n", program->filename);
+	if (program->is_sparse) {
+		ret = sparse_reader_init(&s_reader, fd);
+		if (ret) {
+			fprintf(stderr, "[PROGRAM] failed read sparse file\n");
+			goto out;
+		}
+		file_size = sparse_output_size(&s_reader);
 
-	num_sectors = (sb.st_size + program->sector_size - 1) / program->sector_size;
+	} else {
+		ret = fstat(fd, &sb);
+		if (ret < 0)
+			err(1, "failed to stat \"%s\"\n", program->filename);
+		file_size = sb.st_size;
+	}
 
+	num_sectors = (file_size + program->sector_size - 1)
+		/ program->sector_size;
 	if (program->num_sectors && num_sectors > program->num_sectors) {
 		fprintf(stderr, "[PROGRAM] %s truncated to %d\n",
 			program->label,
@@ -387,12 +401,16 @@ static int firehose_program(struct qdl_device *qdl, struct program *program, int
 
 	t0 = time(NULL);
 
-	lseek(fd, program->file_offset * program->sector_size, SEEK_SET);
+	if(!program->is_sparse)
+		lseek(fd, program->file_offset * program->sector_size, SEEK_SET);
 	left = num_sectors;
 	while (left > 0) {
 		chunk_size = MIN(max_payload_size / program->sector_size, left);
-
-		n = read(fd, buf, chunk_size * program->sector_size);
+		if (program->is_sparse)
+			n = sparse_reader_read(&s_reader, fd, buf,
+					chunk_size * program->sector_size);
+		else
+			n = read(fd, buf, chunk_size * program->sector_size);
 		if (n < 0)
 			err(1, "failed to read");
 
